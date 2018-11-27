@@ -1,4 +1,4 @@
-PyYAML
+PyYAML>=3.13
 elasticsearch
 requests
 psutil

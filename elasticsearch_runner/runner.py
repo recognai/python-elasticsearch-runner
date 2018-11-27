@@ -1,15 +1,20 @@
-from collections import namedtuple
+import errno
 import json
 import logging
 import os
+import pathlib
 import re
-from shutil import copyfile, rmtree
-from tempfile import mkdtemp
-from time import sleep, clock
-from zipfile import ZipFile
-from subprocess import Popen
-import errno
+import shutil
 import sys
+import glob
+import time
+from collections import namedtuple
+from shutil import copyfile, rmtree
+from subprocess import Popen
+from time import sleep, clock
+from typing import Optional
+from zipfile import ZipFile
+
 PY3 = sys.version_info > (3,)
 if PY3:
     import urllib.request, urllib.parse, urllib.error
@@ -30,14 +35,17 @@ Intended for testing and other lightweight purposes with transient data.
 TODO Faster Elasticsearch startup.
 """
 
-
-ES_DEFAULT_VERSION = '2.1.0'
+ES_DEFAULT_VERSION = '6.4.3'
 
 ES_URLS = {'1.7.2': 'https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch-1.7.2.zip',
-           '2.0.0': 'https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/zip/elasticsearch/2.0.0/elasticsearch-2.0.0.zip'}
+           '2.0.0': 'https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/zip/elasticsearch/2.0.0/elasticsearch-2.0.0.zip',
+           ES_DEFAULT_VERSION: 'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-6.4.3.zip'
+           }
 
-ES_DEFAULT_URL_LOCATION = 'https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch'
-ES2_DEFAULT_URL_LOCATION= 'https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/zip/elasticsearch/'
+ES_DEFAULT_URL_LOCATION = 'https://artifacts.elastic.co/downloads/elasticsearch'
+ES1x_DEFAULT_URL_LOCATION = 'https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch'
+ES2x_DEFAULT_URL_LOCATION = 'https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/zip/elasticsearch/'
+
 
 def fn_from_url(url):
     """
@@ -48,7 +56,6 @@ def fn_from_url(url):
     :rtype : str|unicode
     :return: url filename part
     """
-
 
     if PY3:
         parse = urllib.parse.urlparse(url)
@@ -152,22 +159,31 @@ def parse_es_log_header(log_file, limit=200):
         if m:
             server_pid = int(m.group(1))
 
-        m = re.search(r'\[http.*publish_address.*:(\d+)[\]}|}]', line)
+        m = re.search(r'http.*publish_address.*:(\d+)', line.lower())
         if m:
             es_port = int(m.group(1))
 
-        if re.search('started', line):
+        m = re.search(r'.*started.*', line)
+        if m:
             return server_pid, es_port
 
         line = log_file.readline()
 
-    logging.warn('Read more than %d lines while parsing Elasticsearch log header. Giving up ...' % limit)
+    logging.warning('Read more than %d lines while parsing Elasticsearch log header. Giving up ...' % limit)
 
     return server_pid, es_port
 
 
 # tuple holding information about the current Elasticsearch process
 ElasticsearchState = namedtuple('ElasticsearchState', 'server_pid wrapper_pid port config_fn')
+
+
+def fetch_pid_from_pid_file(pid_path: str) -> Optional[int]:
+    try:
+        with open(pid_path) as pid_file:
+            return int(pid_file.readline())
+    except Exception:
+        return None
 
 
 class ElasticsearchRunner:
@@ -217,22 +233,37 @@ class ElasticsearchRunner:
         :rtype : ElasticsearchRunner
         :return: The instance called on.
         """
+
+        def extension_for_os_name(sys_platform: str) -> str:
+            return 'zip'
+
         if self.version in ES_URLS:
             download_url = ES_URLS[self.version]
         else:
-            if self.version.startswith('1'):
-                download_url = "%s-%s.zip" % (ES_DEFAULT_URL_LOCATION, self.version)
+            mayor, _, _ = self.version.split('.')
+
+            if mayor == '1':
+                download_url = "%s-%s.zip" % (ES1x_DEFAULT_URL_LOCATION, self.version)
+            elif mayor == '2':
+                download_url = "%s%s/elasticsearch-%s.zip" % (ES2x_DEFAULT_URL_LOCATION, self.version, self.version)
             else:
-                download_url = "%s%s/elasticsearch-%s.zip" % (ES2_DEFAULT_URL_LOCATION, self.version, self.version)
+                download_url = "{}/elasticsearch-{}.zip".format(ES_DEFAULT_URL_LOCATION, self.version)
+
         es_archive_fn = download_file(download_url, self.install_path)
 
-        if not os.path.exists(os.path.join(self.install_path, self.version_folder)):
+        es_home = os.path.join(self.install_path, self.version_folder)
+        if not os.path.exists(es_home):
             with ZipFile(es_archive_fn, "r") as z:
                 z.extractall(self.install_path)
 
         # insert basic config file
         copyfile(os.path.join(package_path(), 'elasticsearch_runner', 'resources', 'embedded_elasticsearch.yml'),
-                 os.path.join(self.install_path, self.version_folder, 'config', 'elasticsearch.yml'))
+                 os.path.join(es_home, 'config', 'elasticsearch.yml'))
+
+        # WORKAROUND: remove x-pack modules for avoid execution permission problems
+
+        for x_path_module in glob.glob(os.path.join(es_home, 'modules', 'x-pack*')):
+            shutil.rmtree(x_path_module)
 
         return self
 
@@ -244,55 +275,79 @@ class ElasticsearchRunner:
         :return: The instance called on.
         """
         if self.is_running():
-            logging.warn('Elasticsearch already running ...')
-        else:
-            # generate and insert Elasticsearch configuration file with transient data and log paths
-            cluster_name = generate_cluster_name()
-            cluster_path = mkdtemp(prefix='%s-%s-' % (self.version, cluster_name), dir=self.install_path)
-            es_data_dir = os.path.join(cluster_path, "data")
-            es_config_dir = os.path.join(cluster_path, "config")
-            es_log_dir = os.path.join(cluster_path, "log")
-            self.es_config = generate_config(cluster_name=cluster_name, data_path=es_data_dir, log_path=es_log_dir)
-            config_fn = os.path.join(es_config_dir, 'elasticsearch.yml')
+            logging.warning('Elasticsearch already running ...')
+            return self
 
-            try:
-                os.makedirs(es_log_dir)
-                os.makedirs(es_data_dir)
-                os.makedirs(es_config_dir)
-            except OSError as exception:
-                if exception.errno != errno.EEXIST:
-                    raise
-            with open(config_fn, 'w') as f:
-                serialize_config(f, self.es_config)
+        # generate and insert Elasticsearch configuration file with transient data and log paths
+        cluster_name = generate_cluster_name()
+        cluster_path = pathlib.Path(os.path.join(self.install_path, '%s-%s' % (self.version, cluster_name)))
 
-            copyfile(os.path.join(package_path(), 'elasticsearch_runner', 'resources', 'embedded_logging.yml'),
-                 os.path.join(es_config_dir, 'logging.yml'))
+        es_data_dir = pathlib.Path(os.path.join(cluster_path, "data"))
+        es_config_dir = pathlib.Path(os.path.join(cluster_path, "config"))
+        es_log_dir = pathlib.Path(os.path.join(cluster_path, "log"))
+        pid_path = os.path.join(cluster_path, '.pid')
 
-            es_log_fn = os.path.join(es_log_dir, '%s.log' % cluster_name)
-            # create the log file if it doesn't exist yet. We need to open it and seek to to the end before
-            # sniffing out the configuration info from the log.
+        self.es_config = generate_config(
+            cluster_name=cluster_name,
+            data_path=str(es_data_dir.absolute()),
+            log_path=str(es_log_dir.absolute())
+        )
+        config_fn = os.path.join(es_config_dir, 'elasticsearch.yml')
 
-            open(es_log_fn, 'a').close()
+        try:
+            cluster_path.mkdir(parents=True, exist_ok=True)
+            es_log_dir.mkdir(parents=True, exist_ok=True)
+            es_data_dir.mkdir(parents=True, exist_ok=True)
+            es_config_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exception:
+            if exception.errno != errno.EEXIST:
+                raise
+        with open(config_fn, 'w') as f:
+            serialize_config(f, self.es_config)
 
-            runcall = self._es_wrapper_call(os.name) + ['-Des.path.conf=%s' % es_config_dir, '-Des.path.logs=%s' % es_log_dir]
-            wrapper_proc = Popen(runcall)
+        for from_resource, to_resource in [
+            ('embedded_logging.yml', 'logging.yml'),
+            ('jvm.options', 'jvm.options'),
+            ('log4j.properties', 'log4j2.properties')
+        ]:
+            copyfile(os.path.join(package_path(), 'elasticsearch_runner', 'resources', from_resource),
+                     os.path.join(es_config_dir, to_resource))
 
-            es_log_f = open(es_log_fn, 'r')
-            es_log_f.seek(0, 2)
+        es_log_fn = os.path.join(es_log_dir, '%s.log' % cluster_name)
+        # create the log file if it doesn't exist yet. We need to open it and seek to to the end before
+        # sniffing out the configuration info from the log.
 
-            # watch the log
-            server_pid, es_port = parse_es_log_header(es_log_f)
+        server_pid_from_file = fetch_pid_from_pid_file(pid_path)
+        if not server_pid_from_file:
+            open(es_log_fn, 'w').close()
+            runcall = self._es_wrapper_call(os.name)
 
-            if not server_pid:
-                logging.error('Server PID not detected ... runcall was %s' % runcall)
+            mayor, _, _ = self.version.split('.')
+            if int(mayor) < 5:
+                runcall.extend(['-Des.path.conf=%s' % es_config_dir, '-Des.path.logs=%s' % es_log_dir])
 
-            if not es_port:
-                logging.error('Server http port not detected ...')
+            call_args = ['-p', pid_path]
+            runcall.extend(call_args)
+            Popen(runcall, env={**os.environ, **dict(ES_PATH_CONF=es_config_dir)})
+            time.sleep(3)
+            server_pid_from_file = fetch_pid_from_pid_file(pid_path)
 
-            self.es_state = ElasticsearchState(wrapper_pid=wrapper_proc.pid,
-                                               server_pid=server_pid,
-                                               port=es_port,
-                                               config_fn=config_fn)
+        es_log_f = open(es_log_fn, 'r')
+        # watch the log
+        server_pid, es_port = parse_es_log_header(es_log_f, limit=5000)
+        es_log_f.close()
+
+        if not server_pid:
+            server_pid = server_pid_from_file
+
+        if not server_pid:
+            logging.error('Server PID not detected ... from pid file %s' % pid_path)
+
+        if not es_port:
+            logging.error('Server http port not detected ...')
+
+        self.es_state = ElasticsearchState(wrapper_pid=None, server_pid=server_pid, port=es_port, config_fn=config_fn)
+
         return self
 
     def _es_wrapper_call(self, os_name):
@@ -302,10 +357,13 @@ class ElasticsearchRunner:
         :rtype : list[str|unicode]
         :return:
         """
+
         if os_name == 'nt':
-            es_bin = [os.path.join(self.install_path, self.version_folder, 'bin', 'elasticsearch.bat')]
+            es_bin = [
+                os.path.join(self.install_path, self.version_folder, 'bin', 'elasticsearch.bat')]
         else:
-            es_bin = ['/bin/sh', os.path.join(self.install_path, self.version_folder, 'bin', 'elasticsearch')]
+            es_bin = ['/bin/sh',
+                      os.path.join(self.install_path, self.version_folder, 'bin', 'elasticsearch')]
 
         return es_bin
 
@@ -322,7 +380,7 @@ class ElasticsearchRunner:
             server_proc.wait()
 
             if process_exists(self.es_state.server_pid):
-                logging.warn('Failed to stop Elasticsearch server process PID %d ...' % self.es_state.server_pid)
+                logging.warning('Failed to stop Elasticsearch server process PID %d ...' % self.es_state.server_pid)
 
             # delete transient directories
             if 'path' in self.es_config:
@@ -344,7 +402,9 @@ class ElasticsearchRunner:
             self.es_state = None
             self.es_config = None
         else:
-            logging.warn('Elasticsearch is not running ...')
+            logging.warning('Elasticsearch is not running ...')
+            self.es_state = None
+            self.es_config = None
 
         return self
 
