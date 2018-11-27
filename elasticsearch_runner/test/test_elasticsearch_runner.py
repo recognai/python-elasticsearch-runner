@@ -121,9 +121,9 @@ class TestElasticsearchRunner(TestCase):
         es_version = '1.5.2'
         self.runner = ElasticsearchRunner(version=es_version)
         self.runner.install()
-        self.runner.run()
 
         try:
+            self.runner.run()
             self.assertTrue(self.runner.is_running())
 
             health_resp = requests.get('http://localhost:%d/_cluster/health' % self.runner.es_state.port)

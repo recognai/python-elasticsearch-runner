@@ -6,3 +6,6 @@ build
 .pytest_cache
 dist
 *.egg-info
+
+.venv
+venv

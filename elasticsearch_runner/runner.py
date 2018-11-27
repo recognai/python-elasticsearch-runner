@@ -15,6 +15,8 @@ from time import sleep, clock
 from typing import Optional
 from zipfile import ZipFile
 
+_logger = logging.getLogger(__name__)
+
 PY3 = sys.version_info > (3,)
 if PY3:
     import urllib.request, urllib.parse, urllib.error
@@ -84,7 +86,7 @@ def download_file(url, dest_path):
     full_fn = os.path.join(dest_path, fn)
 
     if os.path.exists(full_fn):
-        logging.info('Dataset archive %s already exists in %s ...' % (fn, dest_path))
+        _logger.info('Dataset archive %s already exists in %s ...' % (fn, dest_path))
     else:
         r = requests.get(url, stream=True)
         with open(full_fn, 'wb') as f:
@@ -169,7 +171,7 @@ def parse_es_log_header(log_file, limit=200):
 
         line = log_file.readline()
 
-    logging.warning('Read more than %d lines while parsing Elasticsearch log header. Giving up ...' % limit)
+    _logger.warning('Read more than %d lines while parsing Elasticsearch log header. Giving up ...' % limit)
 
     return server_pid, es_port
 
@@ -223,7 +225,7 @@ class ElasticsearchRunner:
         self.es_config = None
 
         if not check_java():
-            logging.error('Java not installed. Elasticsearch won\'t be able to run ...')
+            _logger.error('Java not installed. Elasticsearch won\'t be able to run ...')
 
     def install(self):
         """
@@ -275,7 +277,7 @@ class ElasticsearchRunner:
         :return: The instance called on.
         """
         if self.is_running():
-            logging.warning('Elasticsearch already running ...')
+            _logger.warning('Elasticsearch already running ...')
             return self
 
         # generate and insert Elasticsearch configuration file with transient data and log paths
@@ -341,10 +343,10 @@ class ElasticsearchRunner:
             server_pid = server_pid_from_file
 
         if not server_pid:
-            logging.error('Server PID not detected ... from pid file %s' % pid_path)
+            _logger.error('Server PID not detected ... from pid file %s' % pid_path)
 
         if not es_port:
-            logging.error('Server http port not detected ...')
+            _logger.error('Server http port not detected ...')
 
         self.es_state = ElasticsearchState(wrapper_pid=None, server_pid=server_pid, port=es_port, config_fn=config_fn)
 
@@ -380,29 +382,29 @@ class ElasticsearchRunner:
             server_proc.wait()
 
             if process_exists(self.es_state.server_pid):
-                logging.warning('Failed to stop Elasticsearch server process PID %d ...' % self.es_state.server_pid)
+                _logger.warning('Failed to stop Elasticsearch server process PID %d ...' % self.es_state.server_pid)
 
             # delete transient directories
             if 'path' in self.es_config:
                 if 'log' in self.es_config['path']:
                     log_path = self.es_config['path']['log']
-                    logging.info('Removing transient log path %s ...' % log_path)
+                    _logger.info('Removing transient log path %s ...' % log_path)
                     rmtree(log_path)
 
                 if 'data' in self.es_config['path']:
                     data_path = self.es_config['path']['data']
-                    logging.info('Removing transient data path %s ...' % data_path)
+                    _logger.info('Removing transient data path %s ...' % data_path)
                     rmtree(data_path)
 
             # delete temporary config file
             if os.path.exists(self.es_state.config_fn):
-                logging.info('Removing transient configuration file %s ...' % self.es_state.config_fn)
+                _logger.info('Removing transient configuration file %s ...' % self.es_state.config_fn)
                 os.remove(self.es_state.config_fn)
 
             self.es_state = None
             self.es_config = None
         else:
-            logging.warning('Elasticsearch is not running ...')
+            _logger.warning('Elasticsearch is not running ...')
             self.es_state = None
             self.es_config = None
 
@@ -430,11 +432,11 @@ class ElasticsearchRunner:
         :return:
         """
         if not self.es_state:
-            logging.warn('Elasticsearch runner is not started ...')
+            _logger.warning('Elasticsearch runner is not started ...')
             return self
 
         if self.es_state.port is None:
-            logging.warn('Elasticsearch runner not properly started ...')
+            _logger.warning('Elasticsearch runner not properly started ...')
             return self
         end_time = clock() + timeout
         health_resp = requests.get('http://localhost:%d/_cluster/health' % self.es_state.port)
@@ -442,8 +444,8 @@ class ElasticsearchRunner:
 
         while health_data['status'] != 'green':
             if clock() > end_time:
-                logging.error('Elasticsearch cluster failed to turn green in %f seconds, current status is %s ...' %
-                              (timeout, health_data['status']))
+                _logger.error('Elasticsearch cluster failed to turn green in %f seconds, current status is %s ...' %
+                               (timeout, health_data['status']))
 
                 return self
 
