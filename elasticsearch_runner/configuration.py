@@ -18,14 +18,15 @@ def generate_config(cluster_name=None, log_path=None, data_path=None):
     :return: Elasticsearch configuration as dict.
     """
     config = {
-        'marvel': {'agent': {'enabled':'false'}},
-        'index': {
-            'number_of_shards': 1,
-            'number_of_replicas': 0,
-        },
+        # 'marvel': {'agent': {'enabled':'false'}},
+        # 'index': {
+        #    'number_of_shards': 1,
+        #    'number_of_replicas': 0,
+        # },
         'http': {
             'cors': {
-                'enabled': True
+                'enabled': True,
+                'allow-origin': '*'
             }
         }
     }
@@ -39,7 +40,7 @@ def generate_config(cluster_name=None, log_path=None, data_path=None):
         path = {}
 
         if log_path:
-            path['log'] = log_path
+            path['logs'] = log_path
 
         if data_path:
             path['data'] = data_path
@@ -59,8 +60,7 @@ def generate_cluster_name(prefix='elasticsearch_runner'):
 
     TODO make this collision safe
     """
-    cluster_name = '%s_%7d' % (prefix, randint(1, 9999999))
-
+    cluster_name = prefix
     return cluster_name
 
 

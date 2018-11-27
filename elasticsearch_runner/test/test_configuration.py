@@ -14,14 +14,10 @@ __author__ = 'alynum'
 class TestConfiguration(TestCase):
     def test_generate_config(self):
         self.assertEqual({
-            'marvel': {'agent': {'enabled': 'false'}},
-            'index': {
-                'number_of_shards': 1,
-                'number_of_replicas': 0,
-            },
             'http': {
                 'cors': {
-                    'enabled': True
+                    'enabled': True,
+                    'allow-origin': '*'
                 }
             },
             'cluster': {'name': 'ba'}},

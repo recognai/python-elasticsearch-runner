@@ -10,5 +10,5 @@ setup(
     author_email='andre.lynum@comperiosearch.com',
     description='Lightweight runner for transient Elasticsearch instances, f.ex for testing.',
     install_requires=['PyYAML', 'elasticsearch', 'requests', 'psutil', 'lxml'],
-    package_data={'resources': ['embedded_elasticsearch.yml']}
+    package_data={'elasticsearch_runner': ['resources/*.*']}
 )
