@@ -9,6 +9,13 @@ setup(
     author='Andre Lynum',
     author_email='andre.lynum@comperiosearch.com',
     description='Lightweight runner for transient Elasticsearch instances, f.ex for testing.',
-    install_requires=['PyYAML', 'elasticsearch', 'requests', 'psutil', 'lxml'],
+    install_requires=[
+        'PyYAML',
+        'elasticsearch',
+        'requests',
+        'psutil',
+        'lxml',
+        'tqdm'
+    ],
     package_data={'elasticsearch_runner': ['resources/*.*']}
 )

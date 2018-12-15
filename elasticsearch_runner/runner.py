@@ -15,6 +15,8 @@ from time import sleep, clock
 from typing import Optional
 from zipfile import ZipFile
 
+from tqdm import tqdm
+
 _logger = logging.getLogger(__name__)
 
 PY3 = sys.version_info > (3,)
@@ -88,12 +90,16 @@ def download_file(url, dest_path):
     if os.path.exists(full_fn):
         _logger.info('Dataset archive %s already exists in %s ...' % (fn, dest_path))
     else:
+        _logger.info('Downloading files from {}'.format(url))
         r = requests.get(url, stream=True)
         with open(full_fn, 'wb') as f:
+            progress_bar = tqdm(unit="B", total=int(r.headers['Content-Length']))
             for chunk in r.iter_content(chunk_size=1024):
                 if chunk:  # filter out keep-alive new chunks
+                    progress_bar.update(len(chunk))
                     f.write(chunk)
                     f.flush()
+            progress_bar.close()
 
     return full_fn
 
@@ -147,7 +153,7 @@ def parse_es_log_header(log_file, limit=200):
     """
     line = log_file.readline()
     server_pid = None
-    es_port = None
+    es_port = 9200
     count = 0
 
     while count < limit:
@@ -348,6 +354,7 @@ class ElasticsearchRunner:
         if not es_port:
             _logger.error('Server http port not detected ...')
 
+
         self.es_state = ElasticsearchState(wrapper_pid=None, server_pid=server_pid, port=es_port, config_fn=config_fn)
 
         return self
@@ -445,7 +452,7 @@ class ElasticsearchRunner:
         while health_data['status'] != 'green':
             if clock() > end_time:
                 _logger.error('Elasticsearch cluster failed to turn green in %f seconds, current status is %s ...' %
-                               (timeout, health_data['status']))
+                              (timeout, health_data['status']))
 
                 return self
 
