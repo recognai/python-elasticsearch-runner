@@ -15,6 +15,7 @@ setup(
         'requests',
         'psutil',
         'lxml',
+        'plac',
         'tqdm'
     ],
     package_data={'elasticsearch_runner': ['resources/*.*']}

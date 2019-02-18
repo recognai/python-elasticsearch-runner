@@ -2,12 +2,13 @@ import io
 import json
 import os
 from unittest import TestCase
+import unittest
 
 import requests
 
 from elasticsearch_runner.runner import ElasticsearchRunner, process_exists, parse_es_log_header
 
-
+@unittest.skip
 class TestElasticsearchRunner(TestCase):
     def __init__(self, methodName='runTest'):
         super(TestElasticsearchRunner, self).__init__(methodName)
