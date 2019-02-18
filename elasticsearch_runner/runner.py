@@ -41,10 +41,12 @@ TODO Faster Elasticsearch startup.
 
 ES_DEFAULT_VERSION = '6.4.3'
 
-ES_URLS = {'1.7.2': 'https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch-1.7.2.zip',
-           '2.0.0': 'https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/zip/elasticsearch/2.0.0/elasticsearch-2.0.0.zip',
-           ES_DEFAULT_VERSION: 'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-6.4.3.zip'
-           }
+ES_URLS = {
+    '1.7.2': 'https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch-1.7.2.zip',
+    '2.0.0': 'https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/zip/elasticsearch/2.0.0/elasticsearch-2.0.0.zip',
+    ES_DEFAULT_VERSION: 'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{}.zip'
+        .format(ES_DEFAULT_VERSION)
+}
 
 ES_DEFAULT_URL_LOCATION = 'https://artifacts.elastic.co/downloads/elasticsearch'
 ES1x_DEFAULT_URL_LOCATION = 'https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch'
@@ -293,7 +295,7 @@ class ElasticsearchRunner:
         es_data_dir = pathlib.Path(os.path.join(cluster_path, "data"))
         es_config_dir = pathlib.Path(os.path.join(cluster_path, "config"))
         es_log_dir = pathlib.Path(os.path.join(cluster_path, "log"))
-        pid_path = os.path.join(cluster_path, '.pid')
+        pid_path = self.__get_pid_file(cluster_path)
 
         self.es_config = generate_config(
             cluster_name=cluster_name,
@@ -340,24 +342,13 @@ class ElasticsearchRunner:
             time.sleep(3)
             server_pid_from_file = fetch_pid_from_pid_file(pid_path)
 
-        es_log_f = open(es_log_fn, 'r')
-        # watch the log
-        server_pid, es_port = parse_es_log_header(es_log_f, limit=5000)
-        es_log_f.close()
-
-        if not server_pid:
-            server_pid = server_pid_from_file
-
-        if not server_pid:
-            _logger.error('Server PID not detected ... from pid file %s' % pid_path)
-
-        if not es_port:
-            _logger.error('Server http port not detected ...')
-
-
-        self.es_state = ElasticsearchState(wrapper_pid=None, server_pid=server_pid, port=es_port, config_fn=config_fn)
-
+        self.es_state = ElasticsearchState(wrapper_pid=None, server_pid=server_pid_from_file, port=9200,
+                                           config_fn=config_fn)
         return self
+
+    @staticmethod
+    def __get_pid_file(cluster_path):
+        return os.path.join(cluster_path, '.pid')
 
     def _es_wrapper_call(self, os_name):
         """
@@ -383,13 +374,16 @@ class ElasticsearchRunner:
         :rtype : ElasticsearchRunner
         :return: The instance called on.
         """
+
         if self.is_running():
-            server_proc = Process(self.es_state.server_pid)
+            pid = self.__es_pid()
+
+            server_proc = Process(pid)
             server_proc.terminate()
             server_proc.wait()
 
-            if process_exists(self.es_state.server_pid):
-                _logger.warning('Failed to stop Elasticsearch server process PID %d ...' % self.es_state.server_pid)
+            if process_exists(pid):
+                _logger.warning('Failed to stop Elasticsearch server process PID %d ...' % pid)
 
             # delete transient directories
             if 'path' in self.es_config:
@@ -424,9 +418,24 @@ class ElasticsearchRunner:
         :rtype : bool
         :return: True if the servier is running, False if not.
         """
-        state = self.es_state
+        pid = self.__es_pid()
+        return not pid is None and process_exists(pid)
 
-        return state and process_exists(state.server_pid)
+    def __es_pid(self):
+        if self.es_state and self.es_state.server_pid:
+            pid = self.es_state.server_pid
+        else:
+            pid = self.__pid_from_file()
+        return pid
+
+    def __pid_from_file(self) -> Optional[int]:
+        try:
+            cluster_path = generate_cluster_name()
+            pid_path = self.__get_pid_file(cluster_path)
+            pid = fetch_pid_from_pid_file(pid_path)
+            return pid
+        except:
+            return None
 
     def wait_for_green(self, timeout=1.):
         """
@@ -460,3 +469,9 @@ class ElasticsearchRunner:
             health_data = json.loads(health_resp.text)
 
         return self
+
+    def wait_process(self, timeout: Optional[int] = None):
+        if self.is_running():
+            pid = self.__es_pid()
+            process = Process(pid)
+            process.wait(timeout=timeout)
