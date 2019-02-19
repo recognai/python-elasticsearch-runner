@@ -329,6 +329,7 @@ class ElasticsearchRunner:
 
         server_pid_from_file = fetch_pid_from_pid_file(pid_path)
         if not server_pid_from_file:
+
             open(es_log_fn, 'w').close()
             runcall = self._es_wrapper_call(os.name)
 
@@ -367,7 +368,7 @@ class ElasticsearchRunner:
 
         return es_bin
 
-    def stop(self):
+    def stop(self, delete_transient: bool = True):
         """
         Stop the Elasticsearch server.
 
@@ -386,21 +387,22 @@ class ElasticsearchRunner:
                 _logger.warning('Failed to stop Elasticsearch server process PID %d ...' % pid)
 
             # delete transient directories
-            if 'path' in self.es_config:
-                if 'log' in self.es_config['path']:
-                    log_path = self.es_config['path']['log']
-                    _logger.info('Removing transient log path %s ...' % log_path)
-                    rmtree(log_path)
+            if delete_transient:
+                if 'path' in self.es_config:
+                    if 'log' in self.es_config['path']:
+                        log_path = self.es_config['path']['log']
+                        _logger.info('Removing transient log path %s ...' % log_path)
+                        rmtree(log_path)
 
-                if 'data' in self.es_config['path']:
-                    data_path = self.es_config['path']['data']
-                    _logger.info('Removing transient data path %s ...' % data_path)
-                    rmtree(data_path)
+                    if 'data' in self.es_config['path']:
+                        data_path = self.es_config['path']['data']
+                        _logger.info('Removing transient data path %s ...' % data_path)
+                        rmtree(data_path)
 
-            # delete temporary config file
-            if os.path.exists(self.es_state.config_fn):
-                _logger.info('Removing transient configuration file %s ...' % self.es_state.config_fn)
-                os.remove(self.es_state.config_fn)
+                # delete temporary config file
+                if os.path.exists(self.es_state.config_fn):
+                    _logger.info('Removing transient configuration file %s ...' % self.es_state.config_fn)
+                    os.remove(self.es_state.config_fn)
 
             self.es_state = None
             self.es_config = None
