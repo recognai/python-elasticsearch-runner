@@ -23,34 +23,29 @@ def generate_config(cluster_name=None, log_path=None, data_path=None):
         #    'number_of_shards': 1,
         #    'number_of_replicas': 0,
         # },
-        'http': {
-            'cors': {
-                'enabled': True,
-                'allow-origin': '*'
-            }
-        }
+        "http": {"cors": {"enabled": True, "allow-origin": "*"}}
     }
 
     if not cluster_name:
         cluster_name = generate_cluster_name()
 
-    config['cluster'] = {'name': cluster_name}
+    config["cluster"] = {"name": cluster_name}
 
     if log_path or data_path:
         path = {}
 
         if log_path:
-            path['logs'] = log_path
+            path["logs"] = log_path
 
         if data_path:
-            path['data'] = data_path
+            path["data"] = data_path
 
-        config['path'] = path
+        config["path"] = path
 
     return config
 
 
-def generate_cluster_name(prefix='elasticsearch_runner'):
+def generate_cluster_name(prefix="elasticsearch_runner"):
     """
     Generates a cluster name with a prefix and a random number.
 
@@ -88,4 +83,4 @@ def package_path():
     """
     self_path = os.path.dirname(os.path.abspath(__file__))
 
-    return os.path.abspath(os.path.join(self_path, '..'))
+    return os.path.abspath(os.path.join(self_path, ".."))
