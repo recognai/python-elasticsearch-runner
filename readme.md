@@ -42,7 +42,11 @@ elasticsearch version passing `--version` command
 ````bash
 >python -m elasticsearch_runner -h
 
-usage: __main__.py [-h] [-v 6.4.3]
+usage: __main__.py [-h] [-v 6.4.3] {start,stop,terminate}
+
+positional arguments:
+  {start,stop,terminate}
+                        Start/stop or terminate engine
 
 optional arguments:
   -h, --help            show this help message and exit
