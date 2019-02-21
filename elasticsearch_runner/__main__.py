@@ -12,7 +12,9 @@ from elasticsearch_runner.runner import ElasticsearchRunner, ES_DEFAULT_VERSION
     version=plac.Annotation("Elasticsearch engine version", kind="option", abbrev="v"),
 )
 def main(command: str, version: str = ES_DEFAULT_VERSION):
-    runner = ElasticsearchRunner(install_path=os.getcwd(), version=version)
+    runner = ElasticsearchRunner(
+        install_path=os.path.join(os.getcwd(), ".esrunner"), version=version
+    )
     runner.install()
     runner.run()
 
