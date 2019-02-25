@@ -44,7 +44,7 @@ Intended for testing and other lightweight purposes with transient data.
 TODO Faster Elasticsearch startup.
 """
 
-ES_DEFAULT_VERSION = "6.4.3"
+ES_DEFAULT_VERSION = "6.6.0"
 
 ES_URLS = {
     "1.7.2": "https://download.elastic.co/elasticsearch/elasticsearch/elasticsearch-1.7.2.zip",
